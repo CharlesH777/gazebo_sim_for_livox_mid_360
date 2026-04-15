@@ -1,0 +1,15 @@
+# ROS / colcon build artifacts
+ws/build/
+ws/install/
+ws/log/
+
+# Local runtime logs
+run_*.log
+verify_*.log
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
