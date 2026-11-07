@@ -5,6 +5,7 @@
 - 不依赖 Docker
 - 保留 Livox + Gazebo + ROS 2 Humble 这条主仿真链路
 - 目录结构尽量简单，方便在普通 Ubuntu 主机上直接编译和运行
+- 将仿真驱动和 `simulated_lio`（模拟 LIO）分开启动，方便学生练习话题接线、launch 配置与接口检查
 
 这份仓库不是把原目录原封不动地打包上来，而是把和仿真主流程直接相关的内容单独拎了出来，去掉了容器文件、预编译产物和一堆历史残留，留下一个能落地、能复现、也更方便继续改的版本。
 
@@ -40,9 +41,26 @@
 - Gazebo Classic 11
 - Livox SDK2 安装到 `/usr/local`
 
-## 已验证的内容
+## 默认启动到哪一步
 
-在远程 Linux 主机上做过一轮实际验证，结论是这套源码可以正常工作。
+`bash ./run_sim_local.sh` 启动 Gazebo、车辆模型、控制器、机器人 TF 和仿真传感器。默认能提供原始雷达话题及 Gazebo 真值位姿：
+
+| 接口 | 消息类型 | 用途 |
+|---|---|---|
+| `/livox/lidar` | `livox_ros_driver2/msg/CustomMsg` | 仿真雷达的 Livox 格式数据 |
+| `/livox/lidar_PointCloud2` | `sensor_msgs/msg/PointCloud2` | 接线练习使用的原始点云 |
+| `/cube_robot/world_pose` | `geometry_msgs/msg/PoseStamped` | Gazebo 提供的车辆真值位姿，参考坐标系为 `world` |
+| `/cube_robot/odom` | `nav_msgs/msg/Odometry` | Gazebo 真值里程计，便于检查车辆运动 |
+
+默认仿真**不启动 `simulated_lio`**。此时没有 `/lidar_body`、`/lidar_world` 数据是正常状态，学生需要自行启动现成模块并连接输入。只有启动节点后，输出话题也可能先被注册；判断是否接通时，还要检查话题是否实际收到消息。
+
+`simulated_lio` 使用原始点云与 Gazebo 真值位姿，将整帧点云转换到 `base_link` 和 `world`。它不订阅 IMU，不从 LiDAR/IMU 数据估计运动，也不进行逐点运动畸变补偿。它提供接线练习需要的模拟接口；`/lidar_world` 仍是点云，不是二维栅格地图或完整 SLAM 地图。默认启动流程也不包含真实 SLAM、二维地图生成器或导航系统。
+
+完整学生操作流程见 [模拟 LIO 接线指南](docs/SIMULATED_LIO_WIRING.md)。
+
+## 历史运行验证
+
+仓库整理阶段曾在远程 Linux 主机上做过一轮实际验证，以下是原有仿真主流程的记录：
 
 已验证项：
 
@@ -50,6 +68,15 @@
 2. `bash ./run_sim_local.sh` 可以拉起仿真主流程
 3. headless 模式下，`cube_robot` 能成功生成
 4. `joint_state_broadcaster` 和 `rear_wheel_velocity_controller` 能成功激活
+
+本次将模拟 LIO 从默认启动流程中分离，另外完成了以下验证：
+
+- 在 ROS 2 Humble 和已有 Livox 驱动依赖环境中，`ros2_livox_simulation` 包完整构建通过。
+- 基础 launch 不启动模拟 LIO；独立 launch 的输入参数可以显式接线。
+- 在隔离 ROS 域内，向真实驱动话题名称发布测试数据：未重映射时没有转换输出，显式接线后产生正确的本体与世界坐标点云。
+- 检查了缺少位姿时不输出、位姿插值、消息坐标系、时间戳、强度保留和世界点云降采样。
+
+这次没有重新进行干净系统依赖安装、Gazebo 场景运行或 RViz GUI 验收；授课前仍应在教学机器上按接线指南完成整条链路的现场验证。
 
 补一句实话：
 
@@ -68,6 +95,8 @@ map-sim-pure-sim-no-docker/
 ├── install_host_deps_ubuntu22_humble.sh
 ├── build_local.sh
 ├── run_sim_local.sh
+├── docs/
+│   └── SIMULATED_LIO_WIRING.md
 └── ws/
     └── src/
         ├── livox_ros_driver2/
@@ -76,7 +105,7 @@ map-sim-pure-sim-no-docker/
 
 ## 一分钟上手
 
-先把仓库放到一个**纯英文路径**里，然后按下面走：
+先把仓库放到一个**纯英文路径**里，然后启动仿真驱动：
 
 ```bash
 git clone <this-repo>
@@ -91,6 +120,39 @@ bash ./run_sim_local.sh
 ```bash
 MAP_SIM_GZCLIENT=0 bash ./run_sim_local.sh
 ```
+
+这个阶段先检查原始点云和真值位姿；`/lidar_world` 尚未发布是正常的。仿真启动包含延时加载，等待车辆生成和控制器激活后，再检查话题。
+
+### 下一步：手动连接模拟 LIO
+
+保留仿真运行的终端。打开另一个终端，在仓库根目录加载环境：
+
+```bash
+source /opt/ros/humble/setup.bash
+source ws/install/setup.bash
+ros2 topic info /livox/lidar_PointCloud2 -v
+ros2 topic info /cube_robot/world_pose -v
+```
+
+先按[接线指南](docs/SIMULATED_LIO_WIRING.md)启动一次未接线节点，观察默认的 `points_raw`、`ground_truth_pose` 订阅为何收不到驱动数据。停止该实例后，用显式重映射连接：
+
+```bash
+ros2 run ros2_livox_simulation simulated_lio --ros-args \
+  -r points_raw:=/livox/lidar_PointCloud2 \
+  -r ground_truth_pose:=/cube_robot/world_pose \
+  -p use_sim_time:=true
+```
+
+也可以用独立 launch 文件记录这两条连接，下面的命令与前面的 `ros2 run` 二选一：
+
+```bash
+ros2 launch ros2_livox_simulation simulated_lio.launch.py \
+  cloud_topic:=/livox/lidar_PointCloud2 \
+  pose_topic:=/cube_robot/world_pose \
+  use_sim_time:=true
+```
+
+接通后检查 `/lidar_body` 与 `/lidar_world` 是否收到 `PointCloud2`。在 RViz 中设置 Fixed Frame 为 `world`，添加 PointCloud2 显示并选择 `/lidar_world`。学习任务是完成现成模块的连接、配置与验证。
 
 ## 依赖安装
 
@@ -217,6 +279,8 @@ bash ./run_sim_local.sh
 当前源码里默认会尝试启动 Gazebo GUI，也就是 `gzclient`。
 
 如果你是在本机桌面会话里跑，或者通过能带图形的远程桌面登录，这通常是最直观的方式。
+
+GUI 是否开启与模拟 LIO 是否启动是两件独立的事。GUI 和 headless 两种方式均只启动基础仿真，`simulated_lio` 通过前述独立命令启动。
 
 ### 纯无界面模式
 

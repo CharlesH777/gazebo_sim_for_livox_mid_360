@@ -31,6 +31,7 @@ find_package(tf2_ros REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(livox_ros_driver2 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS chrono)
+find_package(Protobuf REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(nav_msgs REQUIRED)
 
@@ -63,8 +64,8 @@ target_link_libraries(ros2_livox
   ${GAZEBO_LIBRARIES}
   RayPlugin
   GpuRayPlugin
-  libprotobuf.so.9
-  libboost_chrono.so.1.71.0
+  ${Protobuf_LIBRARIES}
+  ${Boost_LIBRARIES}
 )
 
 ament_target_dependencies(ros2_livox
@@ -78,7 +79,7 @@ ament_target_dependencies(ros2_livox
   livox_ros_driver2
 )
 
-target_include_directories(ros2_livox PRIVATE include)
+target_include_directories(ros2_livox PRIVATE include ${Protobuf_INCLUDE_DIRS})
 
 install(TARGETS ros2_livox
   LIBRARY DESTINATION lib
@@ -111,22 +112,23 @@ install(TARGETS tf_pub
 )
 
 # ===============================
-# FixCloudTime node (C++)
+# Ground-truth-assisted simulated LIO interface (C++)
 # ===============================
-add_executable(fix_cloud_time
-  src/fix_cloud_time.cpp
+add_executable(simulated_lio
+  src/simulated_lio.cpp
 )
 
-ament_target_dependencies(fix_cloud_time
+ament_target_dependencies(simulated_lio
   rclcpp
   sensor_msgs
+  geometry_msgs
 )
 
 install(TARGETS
-  fix_cloud_time
+  simulated_lio
   DESTINATION lib/${PROJECT_NAME}
 )
-target_include_directories(fix_cloud_time
+target_include_directories(simulated_lio
   PRIVATE
     ${EIGEN3_INCLUDE_DIRS}
 )

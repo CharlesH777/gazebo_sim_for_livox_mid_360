@@ -15,23 +15,26 @@
 using sensor_msgs::msg::PointCloud2;
 using geometry_msgs::msg::PoseStamped;
 
-class LidarToWorld : public rclcpp::Node
+// A ground-truth-assisted simulation interface for the wiring exercise.
+// It transforms point clouds using Gazebo poses; it does not estimate motion
+// from LiDAR or IMU measurements as a real LIO algorithm would.
+class SimulatedLio : public rclcpp::Node
 {
 public:
-  LidarToWorld()
-  : Node("lidar_to_world")
+  SimulatedLio()
+  : Node("simulated_lio")
   {
     auto qos = rclcpp::SensorDataQoS().reliable();
 
     cloud_sub_ = this->create_subscription<PointCloud2>(
-      "/livox/lidar_PointCloud2",
+      "points_raw",
       qos,
-      std::bind(&LidarToWorld::cloudCb, this, std::placeholders::_1));
+      std::bind(&SimulatedLio::cloudCb, this, std::placeholders::_1));
 
     pose_sub_ = this->create_subscription<PoseStamped>(
-      "/cube_robot/world_pose",
+      "ground_truth_pose",
       50,
-      std::bind(&LidarToWorld::poseCb, this, std::placeholders::_1));
+      std::bind(&SimulatedLio::poseCb, this, std::placeholders::_1));
 
     cloud_pub_ = this->create_publisher<PointCloud2>("/lidar_world", qos);
     cloud_body_pub_ = this->create_publisher<PointCloud2>("/lidar_body", qos);
@@ -43,7 +46,10 @@ public:
     t_bl_ = Eigen::Vector3d(0.0, 0.0, 0.4);
 
     RCLCPP_INFO(this->get_logger(),
-      "LidarToWorld started (strict transform: pb=R_bl*pl+t_bl, pw=R_wb*pb+t_wb)");
+      "simulated_lio uses Gazebo ground-truth poses; it is not a real LIO estimator");
+    RCLCPP_INFO(this->get_logger(),
+      "Waiting for wired inputs: cloud=%s, ground_truth_pose=%s",
+      cloud_sub_->get_topic_name(), pose_sub_->get_topic_name());
   }
 
 private:
@@ -246,7 +252,7 @@ private:
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<LidarToWorld>());
+  rclcpp::spin(std::make_shared<SimulatedLio>());
   rclcpp::shutdown();
   return 0;
 }

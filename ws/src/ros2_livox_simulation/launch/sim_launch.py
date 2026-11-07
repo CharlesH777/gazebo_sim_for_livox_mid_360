@@ -115,13 +115,8 @@ def generate_launch_description():
     delayed_joint_state = TimerAction(period=18.0, actions=[spawn_joint_state])
     delayed_rear_ctrl = TimerAction(period=20.0, actions=[spawn_rear_wheel_ctrl])
 
-    fix_cloud_node = Node(
-        package="ros2_livox_simulation",
-        executable="fix_cloud_time",
-        name="fix_cloud_time",
-        output="screen",
-        parameters=[{"use_sim_time": True}],
-    )
+    # Keep simulated_lio outside the base simulation. Students start it
+    # separately and wire its generic inputs to the simulation drivers.
 
     fix_imu_node = Node(
         package="ros2_livox_simulation",
@@ -142,7 +137,6 @@ def generate_launch_description():
         delayed_spawn_robot,
         delayed_joint_state,
         delayed_rear_ctrl,
-        fix_cloud_node,
         fix_imu_node,
     ]
 
